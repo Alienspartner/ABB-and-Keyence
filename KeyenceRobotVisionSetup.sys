@@ -1,0 +1,1353 @@
+MODULE KeyenceRobotVisionSetup (SYSMODULE)
+
+!**************  Keyence Robot Vision Setup Program  **************
+!*
+!*  This program is for setting up the robot vision system using
+!*  Keyence's vision sensor.
+!*  Please do not use it for purposes other than its original intended purpose.
+!*  With regard to robot operation, please use the robot while following
+!*  the precautions stated in the "User's Manual".
+!*
+!*  Copyright (c) 2015 KEYENCE CORPORATION. All rights reserved.
+!*
+
+!**************** Definition of Parameters ************************
+ALIAS num cmdstatus;
+PERS tooldata curTool;
+PERS wobjdata curWobj;
+PERS tooldata toolCoord;
+PERS wobjdata wobjCoord;
+
+! Definition of String.
+LOCAL CONST string STR_RBT_CMD := "CRBT";
+LOCAL CONST string STR_SPRT := ",";
+LOCAL CONST string STR_DELIMITER := "\0D";
+LOCAL CONST string STR_DELIM_MAX := "#";
+
+! Execution Status
+LOCAL CONST cmdstatus RES_SUCCESS     := 0;
+LOCAL CONST cmdstatus RES_FAIL        := 1;
+LOCAL CONST cmdstatus RES_ERR_PARAM_RANGE_OVER    := 2;
+LOCAL CONST cmdstatus RES_ERR_MOVE_RANGE_OVER     := 2;
+LOCAL CONST cmdstatus RES_DUMMY_NUM   := 0;
+
+! Receive Command Index.
+LOCAL CONST num RCV_ID_ROBOT_CMD  := 0;
+LOCAL CONST num RCV_ID_OPERATION  := 1;
+LOCAL CONST num RCV_ID_REQUEST    := 2;
+LOCAL CONST num RCV_ID_PARAM      := 3;
+
+! Send Command Index.
+LOCAL CONST num SND_ID_ROBOT_CMD  := 0;
+LOCAL CONST num SND_ID_OPERATION  := 1;
+LOCAL CONST num SND_ID_REQUEST    := 2;
+LOCAL CONST num SND_ID_RESULT     := 3;
+LOCAL CONST num SND_ID_PARAM      := 4;
+
+! Operation Index.
+LOCAL CONST num OPID_ECHO         := 1;
+LOCAL CONST num OPID_GET_PRM      := 2;
+LOCAL CONST num OPID_SET_PRM      := 3;
+LOCAL CONST num OPID_CUR_POS      := 4;
+LOCAL CONST num OPID_REL_MOVE     := 5;
+LOCAL CONST num OPID_ABS_MOVE     := 6;
+LOCAL CONST num OPID_GET_VER      := 7;
+LOCAL CONST num OPID_GET_TOOL     := 8;
+LOCAL CONST num OPID_CUR_POS_HP   := 9;
+LOCAL CONST num OPID_REL_MOVE_HP  := 10;
+LOCAL CONST num OPID_ABS_MOVE_HP  := 11;
+LOCAL CONST num OPID_CUR_JPOS     := 12;
+LOCAL CONST num OPID_GET_USER_D   := 13;
+LOCAL CONST num OPID_REL_MOVE_J   := 14;
+LOCAL CONST num OPID_ABS_MOVE_J   := 15;
+LOCAL CONST num OPID_INVALID      := -1;
+
+! Number of Parameters.
+LOCAL CONST num RES_PRM_NUM_ECHO      := 2;
+LOCAL CONST num RES_PRM_NUM_GET_PRM   := 5;
+LOCAL CONST num RES_PRM_NUM_SET_PRM   := 5;
+LOCAL CONST num RES_PRM_NUM_CUR_POS   := 6;
+LOCAL CONST num RES_PRM_NUM_REL_MOVE  := 6;
+LOCAL CONST num RES_PRM_NUM_ABS_MOVE  := 6;
+LOCAL CONST num RES_PRM_NUM_GET_TOOL  := 6;
+LOCAL CONST num RES_PRM_NUM_CUR_JPOS  := 6;
+
+LOCAL CONST num REQID_INVALID         := -1;
+
+! Index of Parameters.
+LOCAL CONST num RCV_POS_IDX_X       := 3;
+LOCAL CONST num RCV_POS_IDX_Y		:= 4;
+LOCAL CONST num RCV_POS_IDX_Z		:= 5;
+LOCAL CONST num RCV_POS_IDX_RX		:= 6;
+LOCAL CONST num RCV_POS_IDX_RY		:= 7;
+LOCAL CONST num RCV_POS_IDX_RZ		:= 8;
+LOCAL CONST num RCV_POS_SMOOTH		:= 9;
+LOCAL CONST num RCV_POS_MOTION		:= 10;
+LOCAL CONST num RCV_PARAM_MAX 		:= 11;
+
+LOCAL CONST num RCV_PRM_IDX_FMT		:= 3;
+LOCAL CONST num RCV_PRM_IDX_WORK	:= 4;
+LOCAL CONST num RCV_PRM_IDX_TOOL	:= 5;
+LOCAL CONST num RCV_PRM_IDX_SPD		:= 6;
+LOCAL CONST num RCV_PRM_IDX_ACC		:= 7;
+
+LOCAL CONST num RCV_ECH_IDX_PRM1	:= 3;
+LOCAL CONST num RCV_ECH_IDX_PRM2	:= 4;
+
+LOCAL CONST num RCV_TOOL_IDX_TOOL_N	:= 3;
+
+LOCAL CONST num RCV_POS_IDX_J1      := 3;
+LOCAL CONST num RCV_POS_IDX_J2		:= 4;
+LOCAL CONST num RCV_POS_IDX_J3		:= 5;
+LOCAL CONST num RCV_POS_IDX_J4		:= 6;
+LOCAL CONST num RCV_POS_IDX_J5		:= 7;
+LOCAL CONST num RCV_POS_IDX_J6		:= 8;
+
+! Motion Mode.
+LOCAL CONST num MT_MODE_XYZ		:= 0;
+LOCAL CONST num MT_MODE_TOOL	:= 1;
+
+! Calculation Coefficient.
+LOCAL CONST num COEF_LENGTH		:= 1000.0;
+LOCAL CONST num COEF_ANGLE		:= 10.0;
+LOCAL CONST num COEF_ANGLE_HP	:= 1000.0;
+LOCAL CONST num FORMAT_DEFAULT	:= 0;
+
+! Definition of Version.
+LOCAL CONST num MAJOR_VER   := 3;
+LOCAL CONST num MINOR_VER   := 2;
+LOCAL CONST num DEV_VER     := 0;
+
+LOCAL CONST num R_MAKER_ID  := 5;
+LOCAL CONST num R_TYPE_ID   := 0;
+
+! Definition of Communication.
+LOCAL CONST string KEY_DEFAULT_ADDR := "192.168.0.10";
+LOCAL CONST num    KEY_DEFAULT_PORT := 8500;
+LOCAL CONST num    KEY_MAX_STR_LEN  := 80;
+LOCAL CONST num    KEY_CVX_MOD_RCV_LEN  := 46;
+LOCAL CONST num    KEY_MAX_RECV_STR_KEN := 126;
+LOCAL VAR byte     KEY_RECV_BYTE_ARRAY{126};
+
+LOCAL CONST num KEY_CONNECT_RETRIES := 2;
+LOCAL CONST num KEY_CONNECT_TIME    := 4;
+LOCAL CONST num KEY_CLOSE_TIME      := 2;
+LOCAL CONST num KEY_RECV_RETRIES    := 0;
+LOCAL CONST num KEY_RECV_TIME       := 4;
+
+LOCAL VAR errnum ERR_KEY_DATAINVAL := 70;
+LOCAL VAR errnum ERR_KEY_CONLOST   := 71;
+LOCAL VAR errnum ERR_KEY_TIMEOUT   := 72;
+LOCAL VAR errnum ERR_KEY_TOOLONG   := 73;
+LOCAL VAR errnum ERR_KEY_CMDINVAL  := 80;
+
+! Definition of Coordinates.
+LOCAL CONST num TWID_MIN        := 0;
+LOCAL CONST num TWID_MAX        := 9;
+LOCAL CONST num TWID_INVALID    := 0;
+
+LOCAL CONST num SPEED_MIN           := 1;
+LOCAL CONST num SPEED_MAX           := 100;
+
+!**************** INPUT THE NAME OF COORDINATES ************************
+!  Set the string according to the name of coordinates that is to be used.
+LOCAL CONST string TOOL_NAME{10}    := [    "tool0", "tool1", "tool2", "tool3", "tool4",
+                                            "tool5", "tool6", "tool7", "tool8", "tool9"];
+LOCAL CONST string WOBJ_NAME{10}    := [    "wobj0", "wobj1", "wobj2", "wobj3", "wobj4",
+                                            "wobj5", "wobj6", "wobj7", "wobj8", "wobj9"];
+
+!**************** Global Parameters ************************************
+LOCAL VAR string stAddress;
+LOCAL VAR num nPort;
+VAR socketdev skdSocket;
+LOCAL VAR bool bConnected := FALSE;
+LOCAL VAR bool TOOL_ENABLE {10}     := [    TRUE, TRUE, TRUE, TRUE, TRUE,
+                                            TRUE, TRUE, TRUE, TRUE, TRUE];
+LOCAL VAR bool WOBJ_ENABLE {10}     := [    TRUE, TRUE, TRUE, TRUE, TRUE,
+                                            TRUE, TRUE, TRUE, TRUE, TRUE];
+LOCAL VAR num TOOL_NUM  := 0;
+LOCAL VAR num WOBJ_NUM  := 0;
+
+!**********************************************************
+!*  Procedure KeyenceSetup                                *
+!**********************************************************
+PROC KeyenceSetup(string stAddress, num nPort)
+    VAR num nOprtID;
+    VAR num nReqID;
+    VAR num nArray{RCV_PARAM_MAX};
+    VAR cmdstatus status;
+
+    ConfL \On;
+    SingArea \Wrist;
+    UtilInitCoord;
+
+    IF bConnected=TRUE THEN
+        KeyClose;
+    ENDIF
+
+    WHILE bConnected=FALSE DO
+        KeyConnect \Address:=stAddress, \Port:=nPort;
+    ENDWHILE
+
+    WHILE TRUE DO
+        status := KeyInterpretCmd(nOprtID, nReqID, nArray);
+        IF status=RES_SUCCESS THEN
+            TEST nOprtID
+            CASE OPID_ECHO:
+                KeyEcho nOprtID, nReqID, nArray;
+    		CASE OPID_GET_PRM:
+    			KeyGetRobotParam nOprtID, nReqID, nArray;
+    		CASE OPID_SET_PRM:
+    			KeySetRobotParam nOprtID, nReqID, nArray;
+    		CASE OPID_CUR_POS:
+    			KeyCurPos nOprtID, nReqID, nArray;
+    		CASE OPID_REL_MOVE:
+    			KeyRelMove nOprtID, nReqID, nArray;
+    		CASE OPID_ABS_MOVE:
+    			KeyAbsMove nOprtID, nReqID, nArray;
+    		CASE OPID_GET_VER:
+                KeyGetProgVer nOprtID, nReqID, nArray;
+    		CASE OPID_GET_TOOL:
+    			KeyGetToolData nOprtID, nReqID, nArray;
+    		CASE OPID_CUR_POS_HP:
+    			KeyCurPosHiPrec nOprtID, nReqID, nArray;
+    		CASE OPID_REL_MOVE_HP:
+    			KeyRelMoveHiPrec nOprtID, nReqID, nArray;
+    		CASE OPID_ABS_MOVE_HP:
+    			KeyAbsMoveHiPrec nOprtID, nReqID, nArray;
+			CASE OPID_CUR_JPOS:
+				keyCurJPos nOprtID, nReqID, nArray;
+			CASE OPID_GET_USER_D:
+				keyGetUserCoordinate nOprtID, nReqID, nArray;
+			CASE OPID_REL_MOVE_J:
+				keyRelMoveJPos nOprtID, nReqID, nArray;
+			CASE OPID_ABS_MOVE_J:
+				keyAbsMoveJPos nOprtID, nReqID, nArray;
+            DEFAULT:
+                RAISE ERR_KEY_CMDINVAL;
+            ENDTEST
+        ELSE
+        ENDIF
+    ENDWHILE
+
+ERROR
+	TPWrite "KeyenceSetup(), Unhandled error " + ValToStr(ERRNO);
+	RAISE;
+ENDPROC
+
+!**********************************************************
+!*  Procedure KeyConnect                                  *
+!*                                                        *
+!*  Description:                                          *
+!*  Opens the connection to the Keyence vision system.    *
+!**********************************************************
+PROC KeyConnect(\string Address \num Port)
+
+	VAR num nRetries := 0;
+
+	IF NOT bConnected THEN
+		IF Present(Address) THEN
+			stAddress := Address;
+		ELSE
+			stAddress := KEY_DEFAULT_ADDR;
+		ENDIF
+
+		IF Present(Port) THEN
+			nPort := Port;
+		ELSE
+			nPort := KEY_DEFAULT_PORT;
+		ENDIF
+
+		SocketCreate skdSocket;
+		SocketConnect skdSocket, stAddress, nPort \Time:=KEY_CONNECT_TIME;
+		bConnected := TRUE;
+	ENDIF
+
+ERROR
+	IF ERRNO = ERR_SOCK_CLOSED THEN
+		TPWrite "KeyConnect(), The socket was closed";
+		RAISE ERR_KEY_CONLOST;
+	ELSEIF ERRNO = ERR_SOCK_TIMEOUT THEN
+		IF nRetries < KEY_CONNECT_RETRIES THEN
+			WaitTime KEY_CONNECT_TIME;
+			Incr nRetries;
+			RETRY;
+		ELSE
+			TPWrite "KeyConnect(), The operation timed out";
+			RAISE ERR_KEY_TIMEOUT;
+		ENDIF
+	ELSE
+		TPWrite "KeyConnect(), Unhandled error " + ValToStr(ERRNO);
+		RAISE;
+	ENDIF
+
+ENDPROC
+
+!**********************************************************
+!*  Procedure KeyClose                                    *
+!*                                                        *
+!*  Description:                                          *
+!*  Closes the connection to the Keyence vision system.   *
+!**********************************************************
+PROC KeyClose()
+
+	IF bConnected THEN
+		SocketClose skdSocket;
+		WaitTime KEY_CLOSE_TIME;
+		bConnected := FALSE;
+	ENDIF
+
+ERROR
+	TPWrite "KeyClose(), Unhandled error" + ValToStr(ERRNO);
+	RAISE;
+
+ENDPROC
+
+!**********************************************************
+!*  Procedure KeySendString                               *
+!*                                                        *
+!*  Description:                                          *
+!*  Sends the specified string to the connected Keyence   *
+!*  vision system.                                        *
+!**********************************************************
+PROC KeySendString(string Value \num Length)
+	VAR String ValueWithDelimiter;
+
+	ValueWithDelimiter := Value + STR_DELIMITER;
+
+	IF bConnected THEN
+		SocketSend skdSocket \Str:=ValueWithDelimiter;
+	ENDIF
+
+ERROR
+	IF ERRNO = ERR_SOCK_CLOSED THEN
+		TPWrite "KeySendString(), The socket is closed";
+		bConnected := FALSE;
+		RAISE ERR_KEY_CONLOST;
+	ELSE
+		TPWrite "KeySendString(), Unhandled error " + ValToStr(ERRNO);
+		RAISE;
+	ENDIF
+
+ENDPROC
+
+!**********************************************************
+!*  Procedure KeyRecvString                               *
+!*                                                        *
+!*  Description:                                          *
+!*  Receives a string from the connected Keyence vision   *
+!*  system.                                               *
+!**********************************************************
+PROC KeyRecvString(VAR string Value \num Length)
+
+	VAR num nRetries;
+    VAR string strChar;
+    strChar := "";
+    Value := "";
+
+	IF bConnected THEN
+        WHILE strChar<>STR_DELIMITER DO
+    		SocketReceive skdSocket \Str:=strChar \ReadNoOfBytes:=1 \Time:=WAIT_MAX;
+            IF strChar<>STR_DELIMITER THEN
+                Value := Value + strChar;
+            ENDIF
+        ENDWHILE
+	ENDIF
+
+ERROR
+	IF ERRNO = ERR_SOCK_CLOSED THEN
+		TPWrite "KeyRecvString(), The socket is closed";
+		bConnected := FALSE;
+		RAISE ERR_KEY_CONLOST;
+	ELSEIF ERRNO = ERR_SOCK_TIMEOUT THEN
+		IF nRetries < KEY_RECV_RETRIES THEN
+			WaitTime KEY_RECV_TIME;
+			Incr nRetries;
+			RETRY;
+		ELSE
+			TPWrite "KeyRecvString(), Operation timed out";
+			RAISE ERR_KEY_TIMEOUT;
+		ENDIF
+	ELSE
+		TPWrite "KeyRecvString(), Unhandled error " + ValToStr(ERRNO);
+		RAISE;
+	ENDIF
+
+ENDPROC
+
+!**********************************************************
+!*  Procedure KeyRcvStrMax                                *
+!*                                                        *
+!*  Description:                                          *
+!*  Receives a string from the connected Keyence vision   *
+!*  system.                                               *
+!**********************************************************
+PROC KeyRcvStrMax(VAR string Value, num mode, num Length)
+
+	VAR num nRetries;
+    VAR string strChar;
+    VAR string strRecv;
+    VAR string strTrash;
+    VAR num nIdx;
+    VAR num strLength;
+    VAR num initialReadLength;
+    VAR num readStep;
+    strChar := "";
+    strRecv := "";
+    strTrash := "";
+    Value := "";
+    readStep := 1;
+    ! Determines initial read length
+    IF mode = 1 THEN
+        ! EX: PPR,1#####
+        ! = 5 byte
+        initialReadLength := 6;
+    ELSEIF mode = 2 THEN
+        ! EX: PPR,1,2,3,4,5,6#####
+        ! = 15 byte
+        initialReadLength := 4 + Length*2;
+    ELSEIF mode = 3 THEN
+        ! EX: PPR,+10.126,+120.456,...
+        initialReadLength := 52;
+    ENDIF
+
+	IF bConnected THEN
+    	SocketReceive skdSocket \Str:=strRecv \ReadNoOfBytes:=KEY_MAX_STR_LEN \Time:=WAIT_MAX;
+    	SocketReceive skdSocket \Str:=strTrash \ReadNoOfBytes:=KEY_CVX_MOD_RCV_LEN \Time:=WAIT_MAX;
+        nIdx := 1;
+        Value := Value + StrPart(strRecv, nIdx, initialReadLength);
+        strLength := initialReadLength;
+        nIdx := nIdx + initialReadLength;
+        strChar := StrPart(Value, strLength, 1);
+
+        IF strChar<>STR_DELIM_MAX THEN
+            WHILE strChar<>STR_DELIM_MAX DO
+                strChar := StrPart(strRecv, nIdx, 1);
+                IF strChar<>STR_DELIM_MAX THEN
+                    Value := Value + strChar;
+                    nIdx := nIdx + 1;
+                ENDIF
+            ENDWHILE
+        ELSE
+            WHILE strChar=STR_DELIM_MAX DO
+                strLength := strLength - 1;
+                Value := StrPart(Value, 1, strLength);
+                strChar := StrPart(Value, strLength, 1);
+                IF strChar<>STR_DELIM_MAX THEN
+                    GOTO END_RECV;
+                ENDIF
+            ENDWHILE
+        ENDIF
+        END_RECV:
+	ENDIF
+
+ERROR
+	IF ERRNO = ERR_SOCK_CLOSED THEN
+		TPWrite "KeyRecvString(), The socket is closed";
+		bConnected := FALSE;
+		RAISE ERR_KEY_CONLOST;
+	ELSEIF ERRNO = ERR_SOCK_TIMEOUT THEN
+		IF nRetries < KEY_RECV_RETRIES THEN
+			WaitTime KEY_RECV_TIME;
+			Incr nRetries;
+			RETRY;
+		ELSE
+			TPWrite "KeyRecvString(), Operation timed out";
+			RAISE ERR_KEY_TIMEOUT;
+		ENDIF
+	ELSE
+		TPWrite "KeyRecvString(), Unhandled error " + ValToStr(ERRNO);
+		RAISE;
+	ENDIF
+
+ENDPROC
+
+!**********************************************************
+!*  Procedure KeyInterpretCmd                             *
+!*                                                        *
+!*  Description:                                          *
+!*  Interprets commands from keyence vision system.       *
+!**********************************************************
+FUNC cmdstatus KeyInterpretCmd(VAR num nOprtID, VAR num nReqID, VAR num nArray{*})
+	VAR string stRbtCommand;
+	VAR string stPart;
+    VAR num nStart  :=0;
+    VAR num nEnd    :=0;
+    VAR num nLen;
+    VAR num nIdx;
+    VAR num nVal;
+
+    KeyRecvString stRbtCommand;
+
+    nStart := strMatch(stRbtCommand, 1, STR_RBT_CMD);
+    nLen := StrLen(stRbtCommand);
+    IF (nLen < nStart) THEN
+        RETURN RES_FAIL;
+    ENDIF
+
+    stRbtCommand := StrPart(stRbtCommand, nStart, nLen-nStart+1);
+
+    !get command parameters
+    nStart  := 0;
+    nEnd    := 0;
+    nIdx := 0;
+    WHILE nEnd < StrLen(stRbtCommand) DO
+        nStart := nEnd+1;
+        nEnd := StrFind(stRbtCommand, nStart, STR_SPRT);
+        stPart := StrPart(stRbtCommand, nStart, nEnd-nStart);
+    	IF strMatch(stPart, 1, STR_RBT_CMD) = 1 THEN
+            !robot control command
+        ELSEIF StrToVal(stPart, nVal) THEN
+            nIdx := nIdx + 1;
+            nArray{nIdx} := nVal;
+        ELSE
+            RAISE ERR_KEY_DATAINVAL;
+        ENDIF
+    ENDWHILE
+
+    IF UtilCheckSum(nArray, nIdx)=RES_SUCCESS THEN
+        nOprtID := nArray{RCV_ID_OPERATION};
+        nReqID := nArray{RCV_ID_REQUEST};
+    ELSE
+        RAISE ERR_KEY_DATAINVAL;
+    ENDIF
+
+    RETURN RES_SUCCESS;
+
+ERROR
+    IF ERRNO = ERR_KEY_TIMEOUT THEN
+
+    ELSE
+    	TPWrite "KeyInterpretCmd(), Unhandled error " + ValToStr(ERRNO);
+    ENDIF
+
+    RETURN RES_FAIL;
+ENDFUNC
+
+!**********************************************************
+!*  Procedure KeyEcho                                     *
+!*                                                        *
+!*  Description:                                          *
+!*  Echoes received command to the Keyence vision system. *
+!**********************************************************
+PROC KeyEcho(num nOprtID, num nReqID, num nArray{*})
+    VAR num nParam1;
+    VAR num nParam2;
+    VAR num nResResult := RES_SUCCESS;
+    nParam1 := nArray{RCV_ECH_IDX_PRM1};
+    nParam2 := nArray{RCV_ECH_IDX_PRM2};
+    KeySendString UtilGetEchoStr(nParam1, nParam2, nOprtID, nReqID, nResResult);
+
+ERROR
+	TPWrite "KeyEcho(), Unhandled error " + ValToStr(ERRNO);
+    KeySendString UtilGetErrStr(nOprtID, nReqID, RES_PRM_NUM_ECHO);
+    RETURN;
+ENDPROC
+
+!**********************************************************
+!*  Procedure KeyGetRobotParam                            *
+!*                                                        *
+!*  Description:                                          *
+!*  Gets the parameters of the robot.                     *
+!**********************************************************
+PROC KeyGetRobotParam(num nOprtID, num nReqID, num nArray{*})
+    VAR num nResResult := RES_SUCCESS;
+
+    KeySendString UtilGetParamStr(nOprtID, nReqID, nResResult);
+
+ERROR
+	TPWrite "KeyGetRobotParam(), Unhandled error " + ValToStr(ERRNO);
+    KeySendString UtilGetErrStr(nOprtID, nReqID, RES_PRM_NUM_GET_PRM);
+    RETURN;
+ENDPROC
+
+!**********************************************************
+!*  Procedure KeySetRobotParam                            *
+!*                                                        *
+!*  Description:                                          *
+!*  Sets the parameters of the robot.                     *
+!**********************************************************
+PROC KeySetRobotParam(num nOprtID, num nReqID, num nArray{*})
+    VAR num nResResult := RES_SUCCESS;
+    VAR num nFormat;
+	VAR num nWork;
+	VAR num nTool;
+	VAR num nSpeed;
+	VAR num nAccel;
+	nWork := nArray{RCV_PRM_IDX_WORK};
+	nTool := nArray{RCV_PRM_IDX_TOOL};
+    nFormat := nArray{RCV_PRM_IDX_FMT};
+	nSpeed := nArray{RCV_PRM_IDX_SPD};
+	nAccel := nArray{RCV_PRM_IDX_ACC};
+
+    IF TOOL_ENABLE{nTool+1} THEN
+        SetSysData tool0 \ObjectName:=TOOL_NAME{nTool+1};
+        TOOL_NUM := nTool;
+    ELSE
+        nResResult := RES_ERR_PARAM_RANGE_OVER;
+    ENDIF
+
+    IF WOBJ_ENABLE{nWork+1} THEN
+        SetSysData wobj0 \ObjectName:=WOBJ_NAME{nWork+1};
+        WOBJ_NUM := nWork;
+    ELSE
+        nResResult := RES_ERR_PARAM_RANGE_OVER;
+    ENDIF
+
+    SpeedRefresh nSpeed;
+	!Accset nAccel, nAccel;
+    KeySendString UtilGetParamStr(nOprtID, nReqID, nResResult);
+
+ERROR
+	TPWrite "KeySetRobotParam(), Unhandled error " + ValToStr(ERRNO);
+    KeySendString UtilGetErrStr(nOprtID, nReqID, RES_PRM_NUM_SET_PRM);
+ENDPROC
+
+!**********************************************************
+!*  Procedure KeyCurPos                                   *
+!*                                                        *
+!*  Description:                                          *
+!*  Sends the current position.                           *
+!**********************************************************
+PROC KeyCurPos(num nOprtID, num nReqID, num nArray{*})
+    VAR num nResResult := RES_SUCCESS;
+    VAR robtarget RobT;
+    RobT := CRobT();
+    KeySendString UtilGetRsltPosStr(RobT, nOprtID, nReqID, nResResult);
+
+ERROR
+	TPWrite "KeyCurPos(), Unhandled error " + ValToStr(ERRNO);
+    KeySendString UtilGetErrStr(nOprtID, nReqID, RES_PRM_NUM_CUR_POS);
+    RETURN;
+ENDPROC
+
+!**********************************************************
+!*  Procedure KeyRelMove                                  *
+!*                                                        *
+!*  Description:                                          *
+!*  Moves the robot to a relative position.               *
+!**********************************************************
+PROC KeyRelMove(num nOprtID, num nReqID, num nArray{*})
+    VAR num nSmooth;
+    VAR num nMotion;
+    VAR num nX;
+    VAR num nY;
+    VAR num nZ;
+    VAR num nRx;
+    VAR num nRy;
+    VAR num nRz;
+    VAR num nResResult := RES_SUCCESS;
+    VAR robtarget target;
+    VAR jointtarget jointpos;
+
+    nSmooth := nArray{RCV_POS_SMOOTH};
+    nMotion := nArray{RCV_POS_MOTION};
+
+    TEST nMotion
+    CASE MT_MODE_XYZ:
+        target := CRobT();
+        nX := nArray{RCV_POS_IDX_X} / COEF_LENGTH;
+        nY := nArray{RCV_POS_IDX_Y} / COEF_LENGTH;
+        nZ := nArray{RCV_POS_IDX_Z} / COEF_LENGTH;
+        target.trans.x := target.trans.x + nX;
+        target.trans.y := target.trans.y + nY;
+        target.trans.z := target.trans.z + nZ;
+        nRx := EulerZYX(\X, target.rot) + nArray{RCV_POS_IDX_RX} / COEF_ANGLE;
+        nRy := EulerZYX(\Y, target.rot) + nArray{RCV_POS_IDX_RY} / COEF_ANGLE;
+        nRz := EulerZYX(\Z, target.rot) + nArray{RCV_POS_IDX_RZ} / COEF_ANGLE;
+        target.rot := OrientZYX(nRz, nRy, nRx);
+    CASE MT_MODE_TOOL:
+        nX := nArray{RCV_POS_IDX_X} / COEF_LENGTH;
+        nY := nArray{RCV_POS_IDX_Y} / COEF_LENGTH;
+        nZ := nArray{RCV_POS_IDX_Z} / COEF_LENGTH;
+        nRx := nArray{RCV_POS_IDX_RX} / COEF_ANGLE;
+        nRy := nArray{RCV_POS_IDX_RY} / COEF_ANGLE;
+        nRz := nArray{RCV_POS_IDX_RZ} / COEF_ANGLE;
+        target := RelTool(CRobT(), nX, nY, nZ, \Rx:=nRx, \Ry:=nRy, \Rz:=nRz);
+    DEFAULT:
+        RAISE ERR_KEY_DATAINVAL;
+    ENDTEST
+
+    curTool := CTool();
+    curWobj := CWObj();
+    jointpos := CalcJointT(target, curTool, \WObj:=curWobj);
+
+    MOVEL target, v100, fine, curTool, \WObj:=curWobj;
+
+    WaitUntil \InPos, TRUE;
+
+    KeySendString UtilGetRsltPosStr(CRobT(), nOprtID, nReqID, nResResult);
+
+ERROR
+    IF ERRNO = ERR_ROBLIMIT THEN
+        nResResult := RES_ERR_MOVE_RANGE_OVER;
+        KeySendString UtilGetRsltPosStr(CRobT(), nOprtID, nReqID, nResResult);
+    ELSE
+        TPWrite "KeyRelMove(), Unhandled error " + ValToStr(ERRNO);
+        KeySendString UtilGetErrStr(nOprtID, nReqID, RES_PRM_NUM_REL_MOVE);
+    ENDIF
+    RETURN;
+ENDPROC
+
+!**********************************************************
+!*  Procedure KeyAbsMove                                  *
+!*                                                        *
+!*  Moves the robot to an absolute position.              *
+!**********************************************************
+PROC KeyAbsMove(num nOprtID, num nReqID, num nArray{*})
+    VAR num nX;
+    VAR num nY;
+    VAR num nZ;
+    VAR num nRx;
+    VAR num nRy;
+    VAR num nRz;
+    VAR num nResResult := RES_SUCCESS;
+    VAR robtarget target;
+    VAR jointtarget jointpos;
+
+    nX := nArray{RCV_POS_IDX_X} / COEF_LENGTH;
+    nY := nArray{RCV_POS_IDX_Y} / COEF_LENGTH;
+    nZ := nArray{RCV_POS_IDX_Z} / COEF_LENGTH;
+    nRx := nArray{RCV_POS_IDX_RX} / COEF_ANGLE;
+    nRy := nArray{RCV_POS_IDX_RY} / COEF_ANGLE;
+    nRz := nArray{RCV_POS_IDX_RZ} / COEF_ANGLE;
+    target := CRobT();
+    target.trans.x := nX;
+    target.trans.y := nY;
+    target.trans.z := nZ;
+    target.rot := OrientZYX(nRz, nRy, nRx);
+
+    curTool := CTool();
+    curWobj := CWObj();
+    jointpos := CalcJointT(target, curTool, \WObj:=curWobj);
+
+    MOVEL target, v100, fine, curTool, \WObj:=curWobj;
+
+    WaitUntil \InPos, TRUE;
+
+    KeySendString UtilGetRsltPosStr(CRobT(), nOprtID, nReqID, nResResult);
+
+ERROR
+    IF ERRNO = ERR_ROBLIMIT THEN
+        nResResult := RES_ERR_MOVE_RANGE_OVER;
+        KeySendString UtilGetRsltPosStr(CRobT(), nOprtID, nReqID, nResResult);
+    ELSE
+    	TPWrite "KeyAbsMove(), Unhandled error " + ValToStr(ERRNO);
+        KeySendString UtilGetErrStr(nOprtID, nReqID, RES_PRM_NUM_ABS_MOVE);
+    ENDIF
+    RETURN;
+ENDPROC
+
+!**********************************************************
+!*  Procedure KeyGetProgVer                               *
+!*  Description:                                          *
+!*  Gets the version of the setup program.                *
+!**********************************************************
+PROC KeyGetProgVer(num nOprtID, num nReqID, num nArray{*})
+    VAR num nVersion;
+    VAR num nMakerID;
+    VAR num nSum;
+    nVersion := MAJOR_VER * 1000000 + MINOR_VER * 10000 + DEV_VER;
+    nMakerID := R_MAKER_ID * 10 + R_TYPE_ID;
+	nSum := nOprtID + nReqID + RES_SUCCESS + nVersion + nMakerID;
+
+    KeySendString STR_RBT_CMD + STR_SPRT + ValToStr(nOprtID) + STR_SPRT + ValToStr(nReqID) + STR_SPRT + ValToStr(RES_SUCCESS) + STR_SPRT + ValToStr(nVersion) + STR_SPRT + ValToStr(nMakerID) + STR_SPRT + ValToStr(nSum);
+
+ERROR
+	TPWrite "KeyGetProgVer(), Unhandled error " + ValToStr(ERRNO);
+    KeySendString UtilGetErrStr(nOprtID, nReqID, RES_PRM_NUM_ABS_MOVE);
+    RETURN;
+ENDPROC
+
+!**********************************************************
+!*  Procedure KeyGetTool                                  *
+!*                                                        *
+!*  Description:                                          *
+!*  Sends the current position.                           *
+!**********************************************************
+PROC KeyGetToolData(num nOprtID, num nReqID, num nArray{*})
+    VAR num nResResult := RES_SUCCESS;
+	VAR num nTool;
+	VAR string TOOL_NAME_TMP;
+    nTool := nArray{RCV_TOOL_IDX_TOOL_N};
+    IF TOOL_ENABLE{nTool+1} THEN
+    	TOOL_NAME_TMP := TOOL_NAME{nTool+1};
+        GetSysData toolCoord \ObjectName:=TOOL_NAME_TMP;
+    ELSE
+        nResResult := RES_ERR_PARAM_RANGE_OVER;
+    ENDIF
+    KeySendString UtilGetToolDataStr(toolCoord, nOprtID, nReqID, nResResult);
+
+ERROR
+	TPWrite "KeyGetToolData(), Unhandled error " + ValToStr(ERRNO);
+    KeySendString UtilGetErrStr(nOprtID, nReqID, RES_PRM_NUM_GET_TOOL);
+    RETURN;
+ENDPROC
+
+!**********************************************************
+!*  Procedure KeyCurPosHiPrec                             *
+!*                                                        *
+!*  Description:                                          *
+!*  Sends the current position.                           *
+!**********************************************************
+PROC KeyCurPosHiPrec(num nOprtID, num nReqID, num nArray{*})
+    VAR num nResResult := RES_SUCCESS;
+    VAR robtarget RobT;
+    RobT := CRobT();
+    KeySendString UtilGetRsltPosHiPrecStr(RobT.trans, RobT.rot, nOprtID, nReqID, nResResult);
+
+ERROR
+	TPWrite "KeyCurPosHiPrec(), Unhandled error " + ValToStr(ERRNO);
+    KeySendString UtilGetErrStr(nOprtID, nReqID, RES_PRM_NUM_CUR_POS);
+    RETURN;
+ENDPROC
+
+!**********************************************************
+!*  Procedure KeyRelMoveHiPrec                            *
+!*                                                        *
+!*  Description:                                          *
+!*  Moves the robot to a relative position.               *
+!**********************************************************
+PROC KeyRelMoveHiPrec(num nOprtID, num nReqID, num nArray{*})
+    VAR num nSmooth;
+    VAR num nMotion;
+    VAR num nX;
+    VAR num nY;
+    VAR num nZ;
+    VAR num nRx;
+    VAR num nRy;
+    VAR num nRz;
+    VAR num nResResult := RES_SUCCESS;
+    VAR robtarget target;
+    VAR jointtarget jointpos;
+    VAR robtarget RobT;
+
+    nSmooth := nArray{RCV_POS_SMOOTH};
+    nMotion := nArray{RCV_POS_MOTION};
+
+    TEST nMotion
+    CASE MT_MODE_XYZ:
+        target := CRobT();
+        nX := nArray{RCV_POS_IDX_X} / COEF_LENGTH;
+        nY := nArray{RCV_POS_IDX_Y} / COEF_LENGTH;
+        nZ := nArray{RCV_POS_IDX_Z} / COEF_LENGTH;
+        target.trans.x := target.trans.x + nX;
+        target.trans.y := target.trans.y + nY;
+        target.trans.z := target.trans.z + nZ;
+        nRx := EulerZYX(\X, target.rot) + nArray{RCV_POS_IDX_RX} / COEF_ANGLE_HP;
+        nRy := EulerZYX(\Y, target.rot) + nArray{RCV_POS_IDX_RY} / COEF_ANGLE_HP;
+        nRz := EulerZYX(\Z, target.rot) + nArray{RCV_POS_IDX_RZ} / COEF_ANGLE_HP;
+        target.rot := OrientZYX(nRz, nRy, nRx);
+    CASE MT_MODE_TOOL:
+        nX := nArray{RCV_POS_IDX_X} / COEF_LENGTH;
+        nY := nArray{RCV_POS_IDX_Y} / COEF_LENGTH;
+        nZ := nArray{RCV_POS_IDX_Z} / COEF_LENGTH;
+        nRx := nArray{RCV_POS_IDX_RX} / COEF_ANGLE_HP;
+        nRy := nArray{RCV_POS_IDX_RY} / COEF_ANGLE_HP;
+        nRz := nArray{RCV_POS_IDX_RZ} / COEF_ANGLE_HP;
+        target := RelTool(CRobT(), nX, nY, nZ, \Rx:=nRx, \Ry:=nRy, \Rz:=nRz);
+    DEFAULT:
+        RAISE ERR_KEY_DATAINVAL;
+    ENDTEST
+
+    curTool := CTool();
+    curWobj := CWObj();
+    jointpos := CalcJointT(target, curTool, \WObj:=curWobj);
+
+    MOVEL target, v100, fine, curTool, \WObj:=curWobj;
+
+    WaitUntil \InPos, TRUE;
+    RobT := CRobT();
+    KeySendString UtilGetRsltPosHiPrecStr(RobT.trans, RobT.rot, nOprtID, nReqID, nResResult);
+
+ERROR
+    IF ERRNO = ERR_ROBLIMIT THEN
+        nResResult := RES_ERR_MOVE_RANGE_OVER;
+        KeySendString UtilGetRsltPosStr(CRobT(), nOprtID, nReqID, nResResult);
+    ELSE
+        TPWrite "KeyRelMoveHiPrec(), Unhandled error " + ValToStr(ERRNO);
+        KeySendString UtilGetErrStr(nOprtID, nReqID, RES_PRM_NUM_REL_MOVE);
+    ENDIF
+    RETURN;
+ENDPROC
+
+!**********************************************************
+!*  Procedure KeyAbsMoveHiPrec                            *
+!*                                                        *
+!*  Moves the robot to an absolute position.              *
+!**********************************************************
+PROC KeyAbsMoveHiPrec(num nOprtID, num nReqID, num nArray{*})
+    VAR num nX;
+    VAR num nY;
+    VAR num nZ;
+    VAR num nRx;
+    VAR num nRy;
+    VAR num nRz;
+    VAR num nResResult := RES_SUCCESS;
+    VAR robtarget target;
+    VAR jointtarget jointpos;
+    VAR robtarget RobT;
+	
+    nX := nArray{RCV_POS_IDX_X} / COEF_LENGTH;
+    nY := nArray{RCV_POS_IDX_Y} / COEF_LENGTH;
+    nZ := nArray{RCV_POS_IDX_Z} / COEF_LENGTH;
+    nRx := nArray{RCV_POS_IDX_RX} / COEF_ANGLE_HP;
+    nRy := nArray{RCV_POS_IDX_RY} / COEF_ANGLE_HP;
+    nRz := nArray{RCV_POS_IDX_RZ} / COEF_ANGLE_HP;
+    target := CRobT();
+    target.trans.x := nX;
+    target.trans.y := nY;
+    target.trans.z := nZ;
+    target.rot := OrientZYX(nRz, nRy, nRx);
+
+    curTool := CTool();
+    curWobj := CWObj();
+    jointpos := CalcJointT(target, curTool, \WObj:=curWobj);
+
+    MOVEL target, v100, fine, curTool, \WObj:=curWobj;
+
+    WaitUntil \InPos, TRUE;
+    RobT := CRobT();
+    KeySendString UtilGetRsltPosHiPrecStr(RobT.trans, RobT.rot, nOprtID, nReqID, nResResult);
+
+ERROR
+    IF ERRNO = ERR_ROBLIMIT THEN
+        nResResult := RES_ERR_MOVE_RANGE_OVER;
+        KeySendString UtilGetRsltPosStr(CRobT(), nOprtID, nReqID, nResResult);
+    ELSE
+    	TPWrite "KeyAbsMoveHiPrec(), Unhandled error " + ValToStr(ERRNO);
+        KeySendString UtilGetErrStr(nOprtID, nReqID, RES_PRM_NUM_ABS_MOVE);
+    ENDIF
+    RETURN;
+ENDPROC
+
+!**********************************************************
+!*  Function UtilCheckSum                                 *
+!**********************************************************
+FUNC cmdstatus UtilCheckSum(num nArray{*}, num nArrayNum)
+    VAR num nSum := 0;
+    VAR num nIdx := 0;
+
+    IF nArrayNum <= 1 THEN
+        RETURN RES_FAIL;
+    ENDIF
+
+    FOR nIdx FROM 1 TO nArrayNum-1 DO
+        nSum := nSum + nArray{nIdx};
+    ENDFOR
+
+    IF nSum = nArray{nArrayNum} THEN
+        RETURN RES_SUCCESS;
+    ELSE
+        RETURN RES_FAIL;
+    ENDIF
+
+ERROR
+	TPWrite "UtilCheckSum(), Unhandled error " + ValToStr(ERRNO);
+    TRYNEXT;
+ENDFUNC
+
+!**********************************************************
+!*  Function UtilGetEchoStr                               *
+!**********************************************************
+FUNC string UtilGetEchoStr(num nParam1, num nParam2, num nOprtID, num nReqID, num nResResult)
+    VAR num nSum := 0;
+    VAR string stRet;
+    nSum := nParam1 + nParam2;
+    nSum := nSum + nOprtID + nReqID + nResResult;
+
+    stRet := STR_RBT_CMD + STR_SPRT + ValToStr(nOprtID) + STR_SPRT + ValToStr(nReqID) + STR_SPRT + ValToStr(nResResult);
+    stRet := stRet + STR_SPRT + ValToStr(nParam1) + STR_SPRT + ValToStr(nParam2);
+    stRet := stRet + STR_SPRT + ValToStr(nSum);
+    RETURN stRet;
+
+ERROR
+	TPWrite "UtilGetEchoStr(), Unhandled error " + ValToStr(ERRNO);
+    TRYNEXT;
+ENDFUNC
+
+
+!**********************************************************
+!*  Function UtilGetRsltPosStr                            *
+!**********************************************************
+FUNC string UtilGetRsltPosStr(robtarget robT, num nOprtID, num nReqID, num nResResult)
+    VAR num nX;
+    VAR num nY;
+    VAR num nZ;
+    VAR num nRx;
+    VAR num nRy;
+    VAR num nRz;
+    VAR num nSum := 0;
+    VAR string stRet;
+
+    nX := Round(COEF_LENGTH * robT.trans.x);
+    nY := Round(COEF_LENGTH * robT.trans.y);
+    nZ := Round(COEF_LENGTH * robT.trans.z);
+    nRx := Round(COEF_ANGLE * EulerZYX(\X, robT.rot));
+    nRy := Round(COEF_ANGLE * EulerZYX(\Y, robT.rot));
+    nRz := Round(COEF_ANGLE * EulerZYX(\Z, robT.rot));
+    nSum := nX + nY + nZ + nRx + nRy + nRz;
+    nSum := nSum + nOprtID + nReqID + nResResult;
+
+    stRet := STR_RBT_CMD + STR_SPRT + ValToStr(nOprtID) + STR_SPRT + ValToStr(nReqID) + STR_SPRT + ValToStr(nResResult);
+    stRet := stRet + STR_SPRT + ValToStr(nX) + STR_SPRT + ValToStr(nY) + STR_SPRT + ValToStr(nZ);
+    stRet := stRet + STR_SPRT + ValToStr(nRx) + STR_SPRT + ValToStr(nRy) + STR_SPRT + ValToStr(nRz);
+    stRet := stRet + STR_SPRT + ValToStr(nSum);
+    RETURN stRet;
+
+ERROR
+	TPWrite "UtilGetRsltPosStr(), Unhandled error " + ValToStr(ERRNO);
+    TRYNEXT;
+ENDFUNC
+
+!**********************************************************
+!*  Function UtilGetParamStr                              *
+!**********************************************************
+FUNC string UtilGetParamStr(num nOprtID, num nReqID, num nResResult)
+    VAR num nFormat := FORMAT_DEFAULT;
+    VAR num nWork   := TWID_INVALID;
+    VAR num nTool   := TWID_INVALID;
+    VAR num nSpeed;
+    VAR num nAccel;
+    VAR num nSum := 0;
+    VAR num nIdx;
+    VAR string stToolName;
+    VAR string stWobjName;
+    VAR string stRet;
+
+    nWork := WOBJ_NUM;
+    nTool := TOOL_NUM;
+    nSpeed := CSpeedOverride(\CTask);
+   	IF nSpeed<SPEED_MIN THEN
+		nSpeed := SPEED_MIN;
+	ELSEIF SPEED_MAX<nSpeed THEN
+		nSpeed := SPEED_MAX;
+    ENDIF
+    nAccel := 100;
+
+    nSum := nFormat + nWork + nTool + nSpeed + nAccel;
+    nSum := nSum + nOprtID + nReqID + nResResult;
+
+    stRet := STR_RBT_CMD + STR_SPRT + ValToStr(nOprtID) + STR_SPRT + ValToStr(nReqID) + STR_SPRT + ValToStr(nResResult);
+    stRet := stRet + STR_SPRT + ValToStr(nFormat) + STR_SPRT + ValToStr(nWork) + STR_SPRT + ValToStr(nTool) + STR_SPRT + ValToStr(nSpeed) + STR_SPRT + ValToStr(nAccel);
+    stRet := stRet + STR_SPRT + ValToStr(nSum);
+    RETURN stRet;
+
+ERROR
+	TPWrite "UtilGetParamStr(), Unhandled error " + ValToStr(ERRNO);
+    TRYNEXT;
+ENDFUNC
+
+!**********************************************************
+!*  Function UtilGetErrStr                               *
+!**********************************************************
+FUNC string UtilGetErrStr(num nOprtID, num nReqID, num nPrmNum)
+    VAR num nIdx := 1;
+    VAR num nSum := 0;
+    VAR string stRet;
+    nSum := nSum + nOprtID + nReqID + RES_FAIL;
+
+    stRet := STR_RBT_CMD + ValToStr(nOprtID) + STR_SPRT + ValToStr(nReqID) + STR_SPRT + ValToStr(RES_FAIL);
+    FOR nIdx FROM 1 TO nPrmNum DO
+        stRet := stRet + ValToStr(RES_DUMMY_NUM) + STR_SPRT;
+    ENDFOR
+    RETURN stRet;
+
+ERROR
+	TPWrite "UtilGetErrStr(), Unhandled error " + ValToStr(ERRNO);
+    TRYNEXT;
+ENDFUNC
+
+!**********************************************************
+!*  Function UtilGetToolDataStr                           *
+!**********************************************************
+FUNC string UtilGetToolDataStr(tooldata tcp, num nOprtID, num nReqID, num nResResult)
+    VAR num nX := 0;
+    VAR num nY := 0;
+    VAR num nZ := 0;
+    VAR num nRx := 0;
+    VAR num nRy := 0;
+    VAR num nRz := 0;
+    VAR num nSum := 0;
+    VAR string stRet;
+
+    IF nResResult=RES_SUCCESS THEN
+        nX := Round(COEF_LENGTH * tcp.tframe.trans.x);
+        nY := Round(COEF_LENGTH * tcp.tframe.trans.y);
+        nZ := Round(COEF_LENGTH * tcp.tframe.trans.z);
+        nRx := Round(COEF_ANGLE_HP * EulerZYX(\X, tcp.tframe.rot));
+        nRy := Round(COEF_ANGLE_HP * EulerZYX(\Y, tcp.tframe.rot));
+        nRz := Round(COEF_ANGLE_HP * EulerZYX(\Z, tcp.tframe.rot));
+    ENDIF
+    nSum := nX + nY + nZ + nRx + nRy + nRz;
+    nSum := nSum + nOprtID + nReqID + nResResult;
+
+    stRet := STR_RBT_CMD + STR_SPRT + ValToStr(nOprtID) + STR_SPRT + ValToStr(nReqID) + STR_SPRT + ValToStr(nResResult);
+    stRet := stRet + STR_SPRT + ValToStr(nX) + STR_SPRT + ValToStr(nY) + STR_SPRT + ValToStr(nZ);
+    stRet := stRet + STR_SPRT + ValToStr(nRx) + STR_SPRT + ValToStr(nRy) + STR_SPRT + ValToStr(nRz);
+    stRet := stRet + STR_SPRT + ValToStr(nSum);
+    RETURN stRet;
+
+ERROR
+	TPWrite "UtilGetToolDataStr(), Unhandled error " + ValToStr(ERRNO);
+    TRYNEXT;
+ENDFUNC
+
+!**********************************************************
+!*  Function UtilGetRsltPosHiPrecStr                      *
+!**********************************************************
+FUNC string UtilGetRsltPosHiPrecStr(pos trans, orient rot, num nOprtID, num nReqID, num nResResult)
+    VAR num nX;
+    VAR num nY;
+    VAR num nZ;
+    VAR num nRx;
+    VAR num nRy;
+    VAR num nRz;
+    VAR num nSum := 0;
+    VAR string stRet;
+
+    nX := Round(COEF_LENGTH * trans.x);
+    nY := Round(COEF_LENGTH * trans.y);
+    nZ := Round(COEF_LENGTH * trans.z);
+    nRx := Round(COEF_ANGLE_HP * EulerZYX(\X, rot));
+    nRy := Round(COEF_ANGLE_HP * EulerZYX(\Y, rot));
+    nRz := Round(COEF_ANGLE_HP * EulerZYX(\Z, rot));
+    nSum := nX + nY + nZ + nRx + nRy + nRz;
+    nSum := nSum + nOprtID + nReqID + nResResult;
+
+    stRet := STR_RBT_CMD + STR_SPRT + ValToStr(nOprtID) + STR_SPRT + ValToStr(nReqID) + STR_SPRT + ValToStr(nResResult);
+    stRet := stRet + STR_SPRT + ValToStr(nX) + STR_SPRT + ValToStr(nY) + STR_SPRT + ValToStr(nZ);
+    stRet := stRet + STR_SPRT + ValToStr(nRx) + STR_SPRT + ValToStr(nRy) + STR_SPRT + ValToStr(nRz);
+    stRet := stRet + STR_SPRT + ValToStr(nSum);
+    RETURN stRet;
+
+ERROR
+	TPWrite "UtilGetRsltPosHiPrecStr(), Unhandled error " + ValToStr(ERRNO);
+    TRYNEXT;
+ENDFUNC
+
+!**********************************************************
+!*  Function UtilInitCoord                                *
+!**********************************************************
+PROC UtilInitCoord()
+    VAR num nIdx := 1;
+    VAR num nSum := 0;
+    VAR string name;
+    VAR datapos block;
+
+    ! Initialize coord num
+    TOOL_NUM  := 0;
+    WOBJ_NUM  := 0;
+    SetSysData tool0;
+    SetSysData wobj0;
+    curTool := tool0;
+    curWobj := wobj0;
+
+    FOR nIdx FROM TWID_MIN TO TWID_MAX DO
+        TOOL_ENABLE{nIdx+1} := FALSE;
+        WOBJ_ENABLE{nIdx+1} := FALSE;
+    ENDFOR
+
+    SetDataSearch "tooldata" \Object:="tool.*";
+    WHILE GetNextSym(name, block, \Recursive) DO
+        FOR nIdx FROM TWID_MIN TO TWID_MAX DO
+            IF StrMatch(name, 1, TOOL_NAME{nIdx+1})=1 THEN
+                TOOL_ENABLE{nIdx+1} := TRUE;
+            ENDIF
+        ENDFOR
+    ENDWHILE
+
+    SetDataSearch "wobjdata" \Object:="wobj.*";
+    WHILE GetNextSym(name, block, \Recursive) DO
+        FOR nIdx FROM TWID_MIN TO TWID_MAX DO
+            IF StrMatch(name, 1, WOBJ_NAME{nIdx+1})=1 THEN
+                WOBJ_ENABLE{nIdx+1} := TRUE;
+            ENDIF
+        ENDFOR
+    ENDWHILE
+ERROR
+	TPWrite "UtilInitCoord(), Unhandled error " + ValToStr(ERRNO);
+    TRYNEXT;
+ENDPROC
+
+!**********************************************************
+!*  Procedure KeyCurJPos                                  *
+!*                                                        *
+!*  Description:                                          *
+!*  Sends the current joint position.                     *
+!**********************************************************
+PROC KeyCurJPos(num nOprtID, num nReqID, num nArray{*})
+    VAR num nResResult := RES_SUCCESS;
+    VAR jointtarget jointpos;
+    jointpos := CJointT();
+    KeySendString UtilGetRsltSixJPosStr(jointpos, nOprtID, nReqID, nResResult);
+
+ERROR
+	TPWrite "KeyCurJPos(), Unhandled error " + ValToStr(ERRNO);
+    KeySendString UtilGetErrStr(nOprtID, nReqID, RES_PRM_NUM_CUR_JPOS);
+    RETURN;
+ENDPROC
+
+!**********************************************************
+!*  Function UtilGetRsltSixJPosStr                        *
+!**********************************************************
+FUNC string UtilGetRsltSixJPosStr(jointtarget jointpos, num nOprtID, num nReqID, num nResResult)
+    VAR num nJ1;
+    VAR num nJ2;
+    VAR num nJ3;
+    VAR num nJ4;
+    VAR num nJ5;
+    VAR num nJ6;
+    VAR num nSum := 0;
+    VAR string stRet;
+
+    nJ1 := Round(COEF_ANGLE_HP * jointpos.robax.rax_1);
+    nJ2 := Round(COEF_ANGLE_HP * jointpos.robax.rax_2);
+    nJ3 := Round(COEF_ANGLE_HP * jointpos.robax.rax_3);
+    nJ4 := Round(COEF_ANGLE_HP * jointpos.robax.rax_4);
+    nJ5 := Round(COEF_ANGLE_HP * jointpos.robax.rax_5);
+    nJ6 := Round(COEF_ANGLE_HP * jointpos.robax.rax_6);
+    nSum := nJ1 + nJ2 + nJ3 + nJ4 + nJ5 + nJ6;
+    nSum := nSum + nOprtID + nReqID + nResResult;
+
+    stRet := STR_RBT_CMD + STR_SPRT + ValToStr(nOprtID) + STR_SPRT + ValToStr(nReqID) + STR_SPRT + ValToStr(nResResult);
+    stRet := stRet + STR_SPRT + ValToStr(nJ1) + STR_SPRT + ValToStr(nJ2) + STR_SPRT + ValToStr(nJ3);
+    stRet := stRet + STR_SPRT + ValToStr(nJ4) + STR_SPRT + ValToStr(nJ5) + STR_SPRT + ValToStr(nJ6);
+    stRet := stRet + STR_SPRT + ValToStr(nSum);
+    RETURN stRet;
+
+ERROR
+	TPWrite "UtilGetRsltSixJPosStr(), Unhandled error " + ValToStr(ERRNO);
+    TRYNEXT;
+ENDFUNC
+
+!**********************************************************
+!*  Procedure keyGetUserCoordinate                        *
+!*                                                        *
+!*  Description:                                          *
+!*  Sends the defining work coordinates.                  *
+!**********************************************************
+PROC keyGetUserCoordinate(num nOprtID, num nReqID, num nArray{*})
+    VAR num nResResult := RES_SUCCESS;
+    VAR num nWork;
+    VAR string WOBJ_NAME_TMP;
+    nWork := WOBJ_NUM;
+    IF WOBJ_ENABLE{nWork+1} THEN
+        WOBJ_NAME_TMP := WOBJ_NAME{nWork+1};
+        GetSysData wobjCoord \ObjectName:=WOBJ_NAME_TMP;
+    ELSE
+        nResResult := RES_ERR_PARAM_RANGE_OVER;
+    ENDIF
+
+    KeySendString UtilGetRsltPosHiPrecStr(wobjCoord.uframe.trans, wobjCoord.uframe.rot, nOprtID, nReqID, nResResult);
+
+ERROR
+	TPWrite "keyGetUserCoordinate(), Unhandled error " + ValToStr(ERRNO);
+    KeySendString UtilGetErrStr(nOprtID, nReqID, RES_PRM_NUM_CUR_JPOS);
+    RETURN;
+ENDPROC
+
+!**********************************************************
+!*  Procedure keyRelMoveJPos                              *
+!*                                                        *
+!*  Description:                                          *
+!*  Moves the robot to a relative joint position.         *
+!**********************************************************
+PROC keyRelMoveJPos(num nOprtID, num nReqID, num nArray{*})
+    VAR num nJ1;
+    VAR num nJ2;
+    VAR num nJ3;
+    VAR num nJ4;
+    VAR num nJ5;
+    VAR num nJ6;
+    VAR num nResResult := RES_SUCCESS;
+    VAR jointtarget jointpos;
+
+    jointpos := CJointT();
+	nJ1 := nArray{RCV_POS_IDX_J1} / COEF_ANGLE_HP;
+	nJ2 := nArray{RCV_POS_IDX_J2} / COEF_ANGLE_HP;
+	nJ3 := nArray{RCV_POS_IDX_J3} / COEF_ANGLE_HP;
+	nJ4 := nArray{RCV_POS_IDX_J4} / COEF_ANGLE_HP;
+	nJ5	:= nArray{RCV_POS_IDX_J5} / COEF_ANGLE_HP;
+	nJ6 := nArray{RCV_POS_IDX_J6} / COEF_ANGLE_HP;
+	
+	jointpos.robax.rax_1 := jointpos.robax.rax_1 + nJ1;
+	jointpos.robax.rax_2 := jointpos.robax.rax_2 + nJ2;
+	jointpos.robax.rax_3 := jointpos.robax.rax_3 + nJ3;
+	jointpos.robax.rax_4 := jointpos.robax.rax_4 + nJ4;
+	jointpos.robax.rax_5 := jointpos.robax.rax_5 + nJ5;
+	jointpos.robax.rax_6 := jointpos.robax.rax_6 + nJ6;
+
+    curTool := CTool();
+    curWobj := CWObj();
+
+    MOVEABSJ jointpos, v100, fine, curTool, \WObj:=curWobj;
+
+    WaitUntil \InPos, TRUE;
+
+    KeySendString UtilGetRsltSixJPosStr(jointpos, nOprtID, nReqID, nResResult);
+
+ERROR
+    IF ERRNO = ERR_ROBLIMIT THEN
+        nResResult := RES_ERR_MOVE_RANGE_OVER;
+        KeySendString UtilGetRsltSixJPosStr(jointpos, nOprtID, nReqID, nResResult);
+    ELSE
+        TPWrite "keyRelMoveJPos(), Unhandled error " + ValToStr(ERRNO);
+        KeySendString UtilGetErrStr(nOprtID, nReqID, RES_PRM_NUM_REL_MOVE);
+    ENDIF
+    RETURN;
+ENDPROC
+
+!**********************************************************
+!*  Procedure keyAbsMoveJPos                              *
+!*                                                        *
+!*  Description:                                          *
+!*  Moves the robot to a absolute joint position.         *
+!**********************************************************
+PROC keyAbsMoveJPos(num nOprtID, num nReqID, num nArray{*})
+    VAR num nJ1;
+    VAR num nJ2;
+    VAR num nJ3;
+    VAR num nJ4;
+    VAR num nJ5;
+    VAR num nJ6;
+    VAR num nResResult := RES_SUCCESS;
+    VAR robtarget target;
+    VAR jointtarget jointpos;
+
+    jointpos := CJointT();
+	nJ1 := nArray{RCV_POS_IDX_J1} / COEF_ANGLE_HP;
+	nJ2 := nArray{RCV_POS_IDX_J2} / COEF_ANGLE_HP;
+	nJ3 := nArray{RCV_POS_IDX_J3} / COEF_ANGLE_HP;
+	nJ4 := nArray{RCV_POS_IDX_J4} / COEF_ANGLE_HP;
+	nJ5	:= nArray{RCV_POS_IDX_J5} / COEF_ANGLE_HP;
+	nJ6 := nArray{RCV_POS_IDX_J6} / COEF_ANGLE_HP;
+	
+	jointpos.robax.rax_1 := nJ1;
+	jointpos.robax.rax_2 := nJ2;
+	jointpos.robax.rax_3 := nJ3;
+	jointpos.robax.rax_4 := nJ4;
+	jointpos.robax.rax_5 := nJ5;
+	jointpos.robax.rax_6 := nJ6;
+
+    curTool := CTool();
+    curWobj := CWObj();
+
+    MOVEABSJ jointpos, v100, fine, curTool, \WObj:=curWobj;
+
+    WaitUntil \InPos, TRUE;
+
+    KeySendString UtilGetRsltSixJPosStr(jointpos, nOprtID, nReqID, nResResult);
+
+ERROR
+    IF ERRNO = ERR_ROBLIMIT THEN
+        nResResult := RES_ERR_MOVE_RANGE_OVER;
+        KeySendString UtilGetRsltSixJPosStr(jointpos, nOprtID, nReqID, nResResult);
+    ELSE
+        TPWrite "keyAbsMoveJPos(), Unhandled error " + ValToStr(ERRNO);
+        KeySendString UtilGetErrStr(nOprtID, nReqID, RES_PRM_NUM_REL_MOVE);
+    ENDIF
+    RETURN;
+ENDPROC
+
+ENDMODULE
